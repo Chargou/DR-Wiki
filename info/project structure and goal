@@ -1,0 +1,13 @@
+This project is a website for the Roblox game "Divine Rarities"
+The website is projected to have 3 mains parts: the wiki, calculators, and guides
+
+The website is hosted on github pages (with auto deploy thanks to github workflows)
+In the dev environment, it is built using vite (npm run dev)
+
+All code is javascript, no typescript
+
+The website's structure is projected to be:
+[Name, eventually logo of website] [version]
+[Tabs]
+L> Wiki, Calculators, Guides
+[Footer]

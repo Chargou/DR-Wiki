@@ -1,0 +1,9 @@
+Runes are a key component of the game.
+They are bundled in RunePads, which have a cost to "open"/"roll"/"grind" in different currencies.
+Each rune has a rarity/chance to get on each roll
+These grant bonuses in different stats, like "Coins" or "EventRuneBulk". (a boost of x is actually 1+x ie. 0.04 Coins is a 1.04 times boost to coins, compounding with other boosts ie. two separate 1 RuneBulk boosts give a total of 4 times the rune bulk)
+The runes get less rare with RuneLuck, down to a minimum that is defined for each rune.
+You open runes faster thanks to RuneBulk and RuneSpeed, which are commonly abstracted in benefit of "RPS" (Runes per second) which is RuneBulk * RuneSpeed
+Some runes are in events and are affected differently by rune speed and bulk which might get replaced for that specific rune by a set of event rune stats instead of the default ones
+
+The Runes/RunePads are in luau and json format in {not imported yet} (non treated version in message.txt at project root)
