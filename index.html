@@ -4,10 +4,29 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>dr-wiki</title>
+    <title>Divine Rarities Wiki</title>
   </head>
   <body>
-    <div id="app"></div>
+    <header class="site-header">
+      <div class="brand">
+        <img src="/favicon.svg" alt="" width="36" height="36" />
+        <h1>Divine Rarities Wiki</h1>
+        <span id="site-version" class="version" title="Website version"></span>
+      </div>
+      <nav class="tabs">
+        <a href="#/wiki" data-route="wiki">Wiki</a>
+        <a href="#/calculators" data-route="calculators">Calculators</a>
+        <a href="#/guides" data-route="guides">Guides</a>
+      </nav>
+    </header>
+
+    <main id="app"></main>
+
+    <footer class="site-footer">
+      <p>Divine Rarities Wiki &mdash; a community wiki for the Roblox game <em>Divine Rarities</em>.</p>
+      <p>Not affiliated with the game's developers. All game data is sourced from the game.</p>
+    </footer>
+
     <script type="module" src="/src/main.js"></script>
   </body>
 </html>

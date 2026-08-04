@@ -1,9 +1,24 @@
 Runes are a key component of the game.
-They are bundled in RunePads, which have a cost to "open"/"roll"/"grind" in different currencies.
-Each rune has a rarity/chance to get on each roll
-These grant bonuses in different stats, like "Coins" or "EventRuneBulk". (a boost of x is actually 1+x ie. 0.04 Coins is a 1.04 times boost to coins, compounding with other boosts ie. two separate 1 RuneBulk boosts give a total of 4 times the rune bulk)
-The runes get less rare with RuneLuck, down to a minimum that is defined for each rune.
-You open runes faster thanks to RuneBulk and RuneSpeed, which are commonly abstracted in benefit of "RPS" (Runes per second) which is RuneBulk * RuneSpeed
-Some runes are in events and are affected differently by rune speed and bulk which might get replaced for that specific rune by a set of event rune stats instead of the default ones
 
-The Runes/RunePads are in luau and json format in {not imported yet} (non treated version in message.txt at project root)
+They are bundled in RunePads, which have a cost to "open"/"roll"/"grind" in different currencies.
+
+Chance / rarity:
+- Each rune has a `Chance` field. `Chance = N` means a probability of `1/N` to get that rune on each roll.
+- All runes of a pad are rolled independently: opening a pad rolls each rune on its own, so you can get several runes from a single open (e.g. three runes each at 1/2 chance, opened 10 times, gives ~5 of each).
+- `Luck = true` runes get less rare with RuneLuck: the effective chance is divided by luck (`Chance / luck`), down to a per-rune floor defined by `MinChance` (e.g. a 2000-chance rune with `MinChance = 10` and 1000 luck drops to `2000/1000 = 2`, then clamps back up to the minimum of 10).
+- Runes without `Luck` ("secrets") are unaffected by RuneLuck, except the rune luck potion, which still applies: it halves the chance (×2 luck) and is capped by `MinChance` (e.g. a 25003-chance secret with `MinChance = 25000` only drops to 25000 under the potion, not the 12502.5 you'd expect). Some of these still carry a `MinChance` for that reason; without one the potion just halves the chance.
+
+Buffs / stats:
+- Each rune grants bonuses to stats like `CashMulti`, `CoinMulti`, `EnergyMulti`, `GemsMulti`, `Luck`, `RuneBulk`, `EventRuneBulk`, ...
+- Every distinct target name is a separate stat: `CashMulti` and `CoinMulti` are different things.
+- A boost of `x` is actually `1 + x` (i.e. a 0.04 `Coins` boost is a 1.04x multiplier).
+- Boosts from different runes/stats compound multiplicatively (two separate +1 `RuneBulk` boosts give 4x total rune bulk).
+- Each buff object has a `MaxBuff` cap: every copy of that rune adds `Buff` to the target, up to `MaxBuff` total, reached at `MaxBuff / Buff` copies. The cap is per buff object, per rune, per runepad (a `Basic` rune with `Buff = 0.02, MaxBuff = 3` caps at +0.03 CashMulti after 150 copies).
+- `Webhook` / `WebhookColor` flag some rare runes as announced in Discord. Keep this data even if unused by the wiki.
+
+Opening speed:
+- You open runes faster thanks to `RuneBulk` and `RuneSpeed`, commonly abstracted as "RPS" (runes per second) = `RuneBulk * RuneSpeed`.
+- Event runes are affected differently: for a given event rune, `RuneBulk` / `RuneSpeed` / `Luck` may be replaced by event-specific stats (`EventRuneBulk`, `EventRuneSpeed`, `EventRuneLuck`) instead of the default ones.
+- The 100K pad is a (possibly temporary) event celebrating 100k visits; normal bulk/speed/luck do not apply there.
+
+The runes/RunePads are provided by the dev in Rojo-style luau (`message.txt` at project root) and converted to `src/data/runes.json` by `scripts/convert-runes.mjs`. Comments in the source are stripped during conversion.

@@ -1,6 +1,6 @@
 {
   "name": "dr-wiki",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -9,6 +9,6 @@
     "preview": "vite preview"
   },
   "devDependencies": {
-    "vite": "^8.2.0"
+    "vite": "^6.4.3"
   }
 }
