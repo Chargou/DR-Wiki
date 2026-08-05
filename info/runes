@@ -10,7 +10,7 @@ Chance / rarity:
 
 Buffs / stats:
 - Each rune grants bonuses to stats like `CashMulti`, `CoinMulti`, `EnergyMulti`, `GemsMulti`, `Luck`, `RuneBulk`, `EventRuneBulk`, ...
-- Every distinct target name is a separate stat: `CashMulti` and `CoinMulti` are different things.
+- Every distinct target name is a separate stat: `CashMulti` and `CoinMulti` are different things. Note that a rune buffing `Luck` boosts regular luck (used elsewhere in the game), NOT `RuneLuck` — the stat that affects rune drops is `RuneLuck` (and `EventRuneLuck` for event pads), and no rune currently grants it.
 - A boost of `x` is actually `1 + x` (i.e. a 0.04 `Coins` boost is a 1.04x multiplier).
 - Boosts from different runes/stats compound multiplicatively (two separate +1 `RuneBulk` boosts give 4x total rune bulk).
 - Each buff object has a `MaxBuff` cap: every copy of that rune adds `Buff` to the target, up to `MaxBuff` total, reached at `MaxBuff / Buff` copies. The cap is per buff object, per rune, per runepad (a `Basic` rune with `Buff = 0.02, MaxBuff = 3` caps at +0.03 CashMulti after 150 copies).
