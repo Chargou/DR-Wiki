@@ -297,6 +297,32 @@ function renderCalculators() {
     return { rune, pad };
   }
 
+  function saveState() {
+    try {
+      localStorage.setItem(
+        "dr-wiki:calc",
+        JSON.stringify({
+          rune: select.value,
+          rps: rps.value,
+          luck: luck.value,
+          potion: potion.checked,
+          current: current.value,
+          goal: goal.value,
+        }),
+      );
+    } catch {
+      /* storage unavailable */
+    }
+  }
+
+  function loadState() {
+    try {
+      return JSON.parse(localStorage.getItem("dr-wiki:calc")) || null;
+    } catch {
+      return null;
+    }
+  }
+
   function goalSuggestions(rune) {
     const byTarget = new Map();
     for (const b of rune.Buffs) {
@@ -320,7 +346,6 @@ function renderCalculators() {
     const secret = !rune.Luck;
     luck.disabled = secret;
     potion.disabled = !secret;
-    potion.checked = false;
     potionRow.classList.toggle("hidden", !secret);
     current.value = 0;
     goal.value = maxedCopies(rune);
@@ -330,6 +355,7 @@ function renderCalculators() {
   }
 
   function recalc() {
+    saveState();
     const { rune, pad } = getSelection();
     const rpsRaw = rps.value.trim();
     const luckRaw = luck.value.trim();
@@ -394,7 +420,26 @@ function renderCalculators() {
     goal.value = chip.dataset.copies;
     recalc();
   });
+
+  const saved = loadState();
+  if (saved) {
+    const [p, r] = String(saved.rune || "").split("::");
+    if (runesData[p] && runesData[p].Runes.some((x) => x.Name === r)) {
+      select.value = saved.rune;
+    }
+    rps.value = saved.rps ?? "";
+    luck.value = saved.luck ?? "";
+    potion.checked = !!saved.potion;
+  }
   onRuneChange();
+  if (saved) {
+    const max = maxedCopies(getSelection().rune);
+    const cur = Math.min(Math.max(0, Math.floor(parseFloat(saved.current) || 0)), max);
+    const gl = Math.min(Math.max(cur, Math.floor(parseFloat(saved.goal) || 0)), max);
+    current.value = cur;
+    goal.value = gl;
+    recalc();
+  }
 }
 
 function renderGuides() {
