@@ -1,6 +1,7 @@
 import "./styles.css";
 import { version } from "../package.json";
 import runesData from "./data/runes.json";
+import { runeStyle } from "./colors.js";
 
 const app = document.getElementById("app");
 document.getElementById("site-version").textContent = `v${version}`;
@@ -36,6 +37,32 @@ function humanizeStat(name) {
 
 function padDisplayName(name) {
   return `${name.replace(/RunePad$/, "")} RunePad`;
+}
+
+/* Pad tab styling, mirroring the in-game Rune Index rail. Pads the game adds
+   later fall back to a neutral tab so the index keeps working without edits. */
+const PAD_META = {
+  BasicRunePad: { label: "Basic", slug: "basic", from: "#f4f6f9", to: "#aab3c0", ink: "#161c26" },
+  SandRunePad: { label: "Sand", slug: "sand", from: "#ffe2b0", to: "#ffb457", ink: "#3d2405" },
+  SpaceRunePad: { label: "Space", slug: "space", from: "#9333ea", to: "#5b06c4", ink: "#ffffff" },
+  EventRunePad: { label: "100K", slug: "100k", from: "#c2f89e", to: "#6ddc32", ink: "#14330a" },
+};
+
+const PAD_NOTES = {
+  EventRunePad:
+    "Event pad: uses Event Rune Bulk, Speed and Luck instead of the normal rune stats. It celebrates 100k visits and may be temporary.",
+};
+
+function padMeta(name) {
+  if (PAD_META[name]) return PAD_META[name];
+  const label = name.replace(/RunePad$/, "") || name;
+  return {
+    label,
+    slug: label.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "pad",
+    from: "#3a4658",
+    to: "#232c3a",
+    ink: "#e6edf3",
+  };
 }
 
 function fmtNum(n) {
@@ -87,13 +114,13 @@ function maxedCopies(rune) {
   return rune.Buffs.reduce((max, b) => Math.max(max, buffCopies(b)), 0);
 }
 
-function runeCard(rune) {
+function runeCard(rune, index, padName) {
   const secret = !rune.Luck;
   const potionChance = rune.MinChance != null ? rune.MinChance : rune.Chance / 2;
   const luckLine = secret
-    ? `Secret &mdash; not affected by RuneLuck (Rune Luck potion halves the chance: ${fmtChance(potionChance)})`
+    ? `Not affected by RuneLuck (Rune Luck potion halves the chance: ${fmtChance(potionChance)})`
     : rune.MinChance != null
-      ? `Affected by RuneLuck &mdash; chance floor ${fmtChance(rune.MinChance)}`
+      ? `Affected by RuneLuck: chance floor ${fmtChance(rune.MinChance)}`
       : "Affected by RuneLuck";
 
   const buffs = rune.Buffs.map((b) => {
@@ -101,37 +128,87 @@ function runeCard(rune) {
     return `<li>+${fmtNum(b.Buff)} ${stat} per copy &middot; max +${fmtNum(b.MaxBuff)} ${stat} after ${fmtNum(buffCopies(b))} copies</li>`;
   });
 
+  const c = runeStyle(padName, rune, index);
   return `
-    <div class="rune">
+    <article class="rune" style="--accent: ${c.accent}; --from: ${c.from}; --to: ${c.to}">
       <div class="rune-head">
-        <span class="rune-name${secret ? " secret" : ""}">${rune.Name}</span>
-        <span class="rune-chance">${fmtChance(rune.Chance)}</span>
+        <span class="rune-name">${rune.Name}</span>
+        ${secret ? '<span class="rune-badge">Secret</span>' : ""}
       </div>
+      <div class="rune-chance">${fmtChance(rune.Chance)}</div>
       <div class="rune-luck">${luckLine}</div>
-      <div class="rune-maxed">All stats maxed at ${fmtNum(maxedCopies(rune))} copies</div>
       <ul class="buffs">${buffs.join("")}</ul>
-    </div>`;
+      <div class="rune-maxed">All stats maxed at ${fmtNum(maxedCopies(rune))} copies</div>
+    </article>`;
 }
 
-function padSection(name, pad) {
-  const cost = `${pad.Cost.Amount} ${humanizeStat(pad.Cost.Stat)}`;
+/* Cards are filtered by rune name or by any stat the rune buffs, so
+   "cash" surfaces every rune that boosts CashMulti. */
+function runeMatches(rune, query) {
+  if (!query) return true;
+  const haystack = [
+    rune.Name,
+    rune.Luck ? "" : "secret",
+    ...rune.Buffs.map((b) => `${b.Target} ${humanizeStat(b.Target)}`),
+  ]
+    .join(" ")
+    .toLowerCase();
+  return query
+    .toLowerCase()
+    .split(/\s+/)
+    .filter(Boolean)
+    .every((term) => haystack.includes(term));
+}
+
+function runeGrid(padName, pad, query) {
+  const cards = pad.Runes.map((rune, i) => ({ rune, i }))
+    .filter(({ rune }) => runeMatches(rune, query))
+    .map(({ rune, i }) => runeCard(rune, i, padName));
+  if (!cards.length) {
+    return `<p class="index-empty">No runes on this pad match &ldquo;${escapeHtml(query)}&rdquo;.</p>`;
+  }
+  return `<div class="runes">${cards.join("")}</div>`;
+}
+
+function escapeHtml(str) {
+  return String(str).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+}
+
+function padRail(padNames, activeName) {
+  return padNames
+    .map((name) => {
+      const meta = padMeta(name);
+      const active = name === activeName;
+      return `<a class="pad-tab${active ? " active" : ""}" href="#/wiki/${meta.slug}"
+        style="--from: ${meta.from}; --to: ${meta.to}; --ink: ${meta.ink}"
+        aria-current="${active ? "page" : "false"}">${meta.label}</a>`;
+    })
+    .join("");
+}
+
+function padPanel(name, pad, query) {
+  const cost = `${fmtBig(pad.Cost.Amount)} ${humanizeStat(pad.Cost.Stat)} per roll`;
   const secretCount = pad.Runes.filter((r) => !r.Luck).length;
-  const cards = pad.Runes.map(runeCard).join("");
+  const note = PAD_NOTES[name];
   return `
-    <section class="pad">
-      <h2>${padDisplayName(name)} <span class="pad-cost">${cost} per roll</span></h2>
-      <p class="pad-meta">${pad.Runes.length} runes &middot; ${secretCount} secret${secretCount === 1 ? "" : "s"}</p>
-      <div class="runes">${cards}</div>
-    </section>`;
+    <div class="panel-head">
+      <div class="panel-title">
+        <h2>${padDisplayName(name)}</h2>
+        <p class="pad-meta">${pad.Runes.length} runes &middot; ${secretCount} secret${secretCount === 1 ? "" : "s"} &middot; ${cost}</p>
+      </div>
+      <input id="rune-search" class="rune-search" type="search" placeholder="Filter by rune or stat" value="${escapeHtml(query)}" aria-label="Filter runes" />
+    </div>
+    ${note ? `<p class="pad-note">${note}</p>` : ""}
+    <div id="rune-grid">${runeGrid(name, pad, query)}</div>`;
 }
 
 function runesInfoArticle() {
   return `
-    <section class="info-article">
-      <h2>How Runes Work</h2>
+    <details class="info-article" id="how-runes-work">
+      <summary>How Runes Work</summary>
       <ul>
         <li>Stand on a rune pad to open runes. Each open costs the pad's listed currency and rolls once.</li>
-        <li>A rune with a rarity of 1 in N has a 1/N chance per roll, and every rune on the pad is rolled independently &mdash; a single open can give several runes.</li>
+        <li>A rune with a rarity of 1 in N has a 1/N chance per roll, and every rune on the pad is rolled independently - a single open can give several runes.</li>
         <li>RuneLuck makes runes easier to get: the effective chance is divided by your luck, down to each rune's own floor.</li>
         <li>Secret runes are not affected by RuneLuck. Only the Rune Luck potion helps, and it too is capped by the rune's floor.</li>
         <li>RPS (runes per second) = Rune Bulk &times; Rune Speed.</li>
@@ -139,17 +216,62 @@ function runesInfoArticle() {
         <li>Each buff is capped: it stops growing after reaching its maximum, which happens at max / per-copy copies. Caps apply per buff, per rune, per pad.</li>
         <li>Event runes (like the 100K event) use event-specific bulk, speed and luck instead of the normal ones.</li>
       </ul>
-    </section>`;
+    </details>`;
 }
 
-function renderWiki() {
-  const padEntries = Object.entries(runesData);
-  const content = padEntries.map(([name, pad]) => padSection(name, pad)).join("");
+const LAST_PAD_KEY = "dr-wiki:pad";
+const HOWTO_KEY = "dr-wiki:howto";
+
+function readStore(key) {
+  try {
+    return localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
+function writeStore(key, value) {
+  try {
+    localStorage.setItem(key, value);
+  } catch {
+    /* storage unavailable */
+  }
+}
+
+function resolvePad(padNames, slug) {
+  const bySlug = (s) => padNames.find((n) => padMeta(n).slug === s);
+  return bySlug(slug) ?? bySlug(readStore(LAST_PAD_KEY)) ?? padNames[0];
+}
+
+function renderWiki(slug) {
+  const padNames = Object.keys(runesData);
+  const activeName = resolvePad(padNames, slug);
+  const pad = runesData[activeName];
+  const activeSlug = padMeta(activeName).slug;
+  writeStore(LAST_PAD_KEY, activeSlug);
+  /* Keep the address bar on the pad actually being shown, so a bare #/wiki or a
+     dead slug still produces a link that opens the same pad for someone else.
+     replaceState instead of assigning location.hash: no second render. */
+  if (slug !== activeSlug) history.replaceState(null, "", `#/wiki/${activeSlug}`);
+
   app.innerHTML = `
-    <h2 class="page-title">Runes</h2>
-    <p class="page-desc">Runes are a core part of Divine Rarities. They are bundled in RunePads, which cost a currency to open, and grant passive boosts to your stats.</p>
+    <h2 class="page-title">Rune Index</h2>
+    <p class="page-desc">Runes are a core part of Divine Rarities. They are bundled in RunePads, which cost a currency to open, and grant passive boosts to your stats. Pick a pad to see its runes.</p>
     ${runesInfoArticle()}
-    ${content}`;
+    <div class="rune-index">
+      <nav class="pad-rail" aria-label="Rune pads">${padRail(padNames, activeName)}</nav>
+      <section class="index-panel" id="index-panel">${padPanel(activeName, pad, "")}</section>
+    </div>`;
+
+  const howto = document.getElementById("how-runes-work");
+  howto.open = readStore(HOWTO_KEY) !== "closed";
+  howto.addEventListener("toggle", () => writeStore(HOWTO_KEY, howto.open ? "open" : "closed"));
+
+  const search = document.getElementById("rune-search");
+  const grid = document.getElementById("rune-grid");
+  search.addEventListener("input", () => {
+    grid.innerHTML = runeGrid(activeName, pad, search.value.trim());
+  });
 }
 
 function placeholder(title, body) {
@@ -246,7 +368,7 @@ function calcSelectOptions() {
     .map(([padName, pad]) => {
       const opts = pad.Runes.map(
         (r) =>
-          `<option value="${padName}::${r.Name}">${r.Name} — 1 in ${fmtBig(r.Chance)}${r.Luck ? "" : " (secret)"}</option>`,
+          `<option value="${padName}::${r.Name}">${r.Name} - 1 in ${fmtBig(r.Chance)}${r.Luck ? "" : " (secret)"}</option>`,
       ).join("");
       return `<optgroup label="${padDisplayName(padName)}">${opts}</optgroup>`;
     })
@@ -456,13 +578,14 @@ const routes = {
 };
 
 function currentRoute() {
-  const m = location.hash.match(/#\/([a-z]+)/);
-  return m && m[1] in routes ? m[1] : "wiki";
+  const m = location.hash.match(/^#\/([a-z]+)(?:\/([a-z0-9-]+))?/i);
+  const route = m && m[1].toLowerCase() in routes ? m[1].toLowerCase() : "wiki";
+  return { route, sub: m && m[2] ? m[2].toLowerCase() : null };
 }
 
 function render() {
-  const route = currentRoute();
-  routes[route]();
+  const { route, sub } = currentRoute();
+  routes[route](sub);
   document.querySelectorAll(".tabs a").forEach((a) => {
     a.classList.toggle("active", a.dataset.route === route);
   });
