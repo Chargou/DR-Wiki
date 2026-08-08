@@ -114,6 +114,37 @@ function maxedCopies(rune) {
   return rune.Buffs.reduce((max, b) => Math.max(max, buffCopies(b)), 0);
 }
 
+/* The game prints a buff as `x9.20 Fuel`, tagging it [MAX] once capped. Its
+   value is min(Buff * copies, MaxBuff) - verified against a DARK MATTER card
+   at 46 copies, all six values exact. Matching that notation matters: the
+   wiki previously wrote the same number as `+9.2`, so anyone comparing a card
+   against their own screen saw a mismatch with no way to tell which was right.
+   (The true effect is 1+x; the game says x anyway. How Runes Work explains it.) */
+function fmtMult(v) {
+  return `x${v.toFixed(2)}`;
+}
+
+const MAX_TAG = ' <span class="buff-tag">[MAX]</span>';
+
+/* Both values ship in the markup and CSS shows one, so flipping a card is a
+   class change: no re-render, no lost focus, and no height change, since each
+   variant is a single line. */
+function buffLines(rune) {
+  return rune.Buffs.map((b) => {
+    const stat = humanizeStat(b.Target);
+    return `<li><span class="v-max">${fmtMult(b.MaxBuff)} ${stat}${MAX_TAG}</span><span class="v-copy">${fmtMult(b.Buff)} ${stat}</span></li>`;
+  }).join("");
+}
+
+/* The pill is the real control, so keyboard and screen-reader users get a
+   labelled toggle. Clicking anywhere on the card is a pointer shortcut onto
+   the same handler: the usual card-with-primary-action pattern.
+   It lives on the footer row because the header can already hold a long name
+   plus the Secret badge, and a third item there wraps on narrow cards. */
+function modePill(runeName, flipped) {
+  return `<button type="button" class="rune-mode" aria-pressed="${flipped}" aria-label="Per-copy values for ${escapeHtml(runeName)}"><span class="v-max">Max</span><span class="v-copy">Per copy</span></button>`;
+}
+
 function runeCard(rune, index, padName) {
   const secret = !rune.Luck;
   const potionChance = rune.MinChance != null ? rune.MinChance : rune.Chance / 2;
@@ -123,22 +154,21 @@ function runeCard(rune, index, padName) {
       ? `Affected by RuneLuck: chance floor ${fmtChance(rune.MinChance)}`
       : "Affected by RuneLuck";
 
-  const buffs = rune.Buffs.map((b) => {
-    const stat = humanizeStat(b.Target);
-    return `<li>+${fmtNum(b.Buff)} ${stat} per copy &middot; max +${fmtNum(b.MaxBuff)} ${stat} after ${fmtNum(buffCopies(b))} copies</li>`;
-  });
-
   const c = runeStyle(padName, rune, index);
+  const flipped = flippedCards.has(flipKey(padName, rune));
   return `
-    <article class="rune" style="--accent: ${c.accent}; --from: ${c.from}; --to: ${c.to}">
+    <article class="rune${flipped ? " percopy" : ""}" data-rune="${escapeHtml(rune.Name)}" style="--accent: ${c.accent}; --from: ${c.from}; --to: ${c.to}">
       <div class="rune-head">
         <span class="rune-name">${rune.Name}</span>
         ${secret ? '<span class="rune-badge">Secret</span>' : ""}
       </div>
       <div class="rune-chance">${fmtChance(rune.Chance)}</div>
       <div class="rune-luck">${luckLine}</div>
-      <ul class="buffs">${buffs.join("")}</ul>
-      <div class="rune-maxed">All stats maxed at ${fmtNum(maxedCopies(rune))} copies</div>
+      <ul class="buffs">${buffLines(rune)}</ul>
+      <div class="rune-foot">
+        <span class="rune-maxed">Maxed at ${fmtNum(maxedCopies(rune))} copies</span>
+        ${modePill(rune.Name, flipped)}
+      </div>
     </article>`;
 }
 
@@ -186,6 +216,15 @@ function padRail(padNames, activeName) {
     .join("");
 }
 
+/* Cards switched to per-copy, so a filter keystroke that redraws the grid
+   doesn't silently reset them. Keyed per pad: rune names are only unique
+   within one. Session state, deliberately not persisted. */
+const flippedCards = new Set();
+
+function flipKey(padName, rune) {
+  return `${padName}::${rune.Name}`;
+}
+
 function padPanel(name, pad, query) {
   const cost = `${fmtBig(pad.Cost.Amount)} ${humanizeStat(pad.Cost.Stat)} per roll`;
   const secretCount = pad.Runes.filter((r) => !r.Luck).length;
@@ -212,7 +251,9 @@ function runesInfoArticle() {
         <li>RuneLuck makes runes easier to get: the effective chance is divided by your luck, down to each rune's own floor.</li>
         <li>Secret runes are not affected by RuneLuck. Only the Rune Luck potion helps, and it too is capped by the rune's floor.</li>
         <li>RPS (runes per second) = Rune Bulk &times; Rune Speed.</li>
-        <li>Boosts are multiplicative: a +x boost is actually a 1+x multiplier, and boosts from different runes compound.</li>
+        <li>Cards show buffs the way the game writes them: <strong>x8.00 Cash</strong> is a buff value of 8. The real effect is 1+x, so that is a 9&times; multiplier, but the game labels it x8.00 and the wiki matches it so the two agree.</li>
+        <li>Click a rune card to swap between its maxed values and what a single copy adds.</li>
+        <li>Boosts from different runes compound multiplicatively.</li>
         <li>Each buff is capped: it stops growing after reaching its maximum, which happens at max / per-copy copies. Caps apply per buff, per rune, per pad.</li>
         <li>Event runes (like the 100K event) use event-specific bulk, speed and luck instead of the normal ones.</li>
       </ul>
@@ -267,10 +308,28 @@ function renderWiki(slug) {
   howto.open = readStore(HOWTO_KEY) !== "closed";
   howto.addEventListener("toggle", () => writeStore(HOWTO_KEY, howto.open ? "open" : "closed"));
 
-  const search = document.getElementById("rune-search");
-  const grid = document.getElementById("rune-grid");
-  search.addEventListener("input", () => {
-    grid.innerHTML = runeGrid(activeName, pad, search.value.trim());
+  /* The panel element is stable; only its innerHTML is swapped. Delegating
+     from it means nothing needs re-binding after a redraw. */
+  const panel = document.getElementById("index-panel");
+  let query = "";
+
+  panel.addEventListener("input", (e) => {
+    if (e.target.id !== "rune-search") return;
+    query = e.target.value.trim();
+    document.getElementById("rune-grid").innerHTML = runeGrid(activeName, pad, query);
+  });
+
+  panel.addEventListener("click", (e) => {
+    const card = e.target.closest(".rune");
+    if (!card) return;
+    /* Don't hijack a click that was the end of a text selection: dragging
+       across a value to copy it shouldn't also flip the card. */
+    if (String(window.getSelection() ?? "").length) return;
+    const on = card.classList.toggle("percopy");
+    card.querySelector(".rune-mode")?.setAttribute("aria-pressed", String(on));
+    const key = `${activeName}::${card.dataset.rune}`;
+    if (on) flippedCards.add(key);
+    else flippedCards.delete(key);
   });
 }
 
