@@ -272,6 +272,12 @@ main {
 
 .rune {
   position: relative;
+  /* Grid rows stretch every card to the tallest, so a column layout plus an
+     auto top margin on the footer pins "Maxed at N copies" to the bottom edge.
+     Without it the footer floats up under a short buff list and the row reads
+     ragged. */
+  display: flex;
+  flex-direction: column;
   border: 1px solid var(--border);
   border-radius: 8px;
   /* The tint mirrors the in-game card gradient at low opacity; keep it in step
@@ -333,27 +339,98 @@ main {
   margin-bottom: 0.5rem;
 }
 
-.rune-maxed {
-  font-size: 0.75rem;
-  color: var(--gold);
-  margin-top: 0.5rem;
-  padding-top: 0.4rem;
-  border-top: 1px dashed var(--border);
-}
-
 .buffs {
   list-style: none;
-  margin: 0;
+  /* Bottom margin keeps a gap when the card has no slack for the footer's
+     auto margin to absorb. */
+  margin: 0 0 0.5rem;
   padding: 0;
   font-size: 0.86rem;
   color: var(--text);
 }
 
-.buffs li::before {
-  content: "+";
-  color: var(--gold);
+.buffs li {
+  padding: 0.05rem 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.buff-tag {
+  font-size: 0.72rem;
   font-weight: 700;
-  margin-right: 0.3rem;
+  color: var(--gold);
+  letter-spacing: 0.02em;
+}
+
+/* Card flips: both values are in the DOM, CSS shows one. Each variant is a
+   single line, so flipping never changes the card's height. */
+.rune .v-copy {
+  display: none;
+}
+
+.rune.percopy .v-max {
+  display: none;
+}
+
+.rune.percopy .v-copy {
+  display: inline;
+}
+
+.rune {
+  cursor: pointer;
+  transition: border-color 0.12s ease;
+}
+
+.rune:hover {
+  border-color: var(--accent);
+}
+
+.rune:hover .rune-mode {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.rune-foot {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: auto;
+  padding-top: 0.4rem;
+  border-top: 1px dashed var(--border);
+}
+
+.rune-maxed {
+  flex: 1;
+  min-width: 0;
+  font-size: 0.75rem;
+  color: var(--gold);
+}
+
+.rune-mode {
+  flex: none;
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.68rem;
+  font-weight: 600;
+  padding: 0.1rem 0.55rem;
+  cursor: pointer;
+  white-space: nowrap;
+  /* Sized for the wider of the two labels. A pill that resized on flip would
+     reflow the footer row and undo the point of swapping in place. */
+  min-width: 5rem;
+  text-align: center;
+}
+
+.rune-mode:focus-visible {
+  outline: 2px solid var(--link);
+  outline-offset: 2px;
+}
+
+.rune.percopy .rune-mode {
+  color: var(--gold);
+  border-color: var(--gold);
 }
 
 @media (max-width: 760px) {
