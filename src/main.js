@@ -6,6 +6,7 @@ import { fmtBig, fmtChance, fmtMult, fmtNum, humanizeStat, parseNum } from "./fo
 import { buffCopies, maxedCopies } from "./runes-model.js";
 import { PAD_NOTES, padDisplayName, padMeta, padRail } from "./pads.js";
 import { readCounts, renderRuneTotals } from "./rune-totals.js";
+import { collectData, importData, resetData } from "./settings.js";
 
 const app = document.getElementById("app");
 const versionEl = document.getElementById("site-version");
@@ -18,8 +19,64 @@ versionEl.addEventListener("click", () => modal.classList.remove("hidden"));
 modal.addEventListener("click", (e) => {
   if (e.target.closest("[data-close-modal]")) modal.classList.add("hidden");
 });
+
+const settingsModal = document.getElementById("settings-modal");
+const settingsStatus = document.getElementById("settings-status");
+const settingsNote = (msg) => {
+  settingsStatus.textContent = msg;
+};
+document.getElementById("settings-btn").addEventListener("click", () => settingsModal.classList.remove("hidden"));
+settingsModal.addEventListener("click", (e) => {
+  if (e.target.closest("[data-close-settings]")) settingsModal.classList.add("hidden");
+});
+
+const settingsExport = document.getElementById("settings-export");
+settingsExport.addEventListener("click", () => {
+  const blob = new Blob([JSON.stringify(collectData(), null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "dr-wiki-data.json";
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+  settingsNote("Exported your saved data.");
+});
+
+const settingsImport = document.getElementById("settings-import");
+const settingsFile = document.getElementById("settings-file");
+settingsImport.addEventListener("click", () => settingsFile.click());
+settingsFile.addEventListener("change", () => {
+  const file = settingsFile.files?.[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    try {
+      const n = importData(JSON.parse(String(reader.result)));
+      settingsNote(`Imported ${n} saved values.`);
+      render();
+    } catch (err) {
+      settingsNote(`Import failed: ${err.message}`);
+    }
+  };
+  reader.onerror = () => settingsNote("Couldn't read that file.");
+  reader.readAsText(file);
+  settingsFile.value = "";
+});
+
+document.getElementById("settings-reset").addEventListener("click", () => {
+  if (!window.confirm("Reset all saved data on this device? This clears your rune counts, calculator inputs and settings. This cannot be undone.")) return;
+  const n = resetData();
+  settingsNote(`Reset ${n} saved values.`);
+  render();
+});
+
 document.addEventListener("keydown", (e) => {
-  if (e.key === "Escape" && !modal.classList.contains("hidden")) modal.classList.add("hidden");
+  if (e.key !== "Escape") return;
+  for (const m of [settingsModal, modal]) {
+    if (!m.classList.contains("hidden")) m.classList.add("hidden");
+  }
 });
 
 const MAX_TAG = ' <span class="buff-tag">[MAX]</span>';
@@ -308,6 +365,28 @@ function formatDuration(seconds) {
   return "0 seconds";
 }
 
+function formatDurationPrecise(seconds) {
+  if (seconds < 0.01) return seconds > 0 ? "less than a second" : "0 seconds";
+  if (seconds < 60) return `${fmtNum(Math.round(seconds * 100) / 100)}s`;
+  let s = Math.round(seconds);
+  const units = [
+    ["y", 31557600],
+    ["d", 86400],
+    ["h", 3600],
+    ["m", 60],
+    ["s", 1],
+  ];
+  const parts = [];
+  for (const [name, size] of units) {
+    const v = Math.floor(s / size);
+    if (v > 0) {
+      parts.push(`${v}${name}`);
+      s -= v * size;
+    }
+  }
+  return parts.join("") || "0s";
+}
+
 function calcSelectOptions() {
   return Object.entries(runesData)
     .map(([padName, pad]) => {
@@ -487,7 +566,7 @@ function renderRuneTime(host) {
     const need = goalVal - curVal;
     const spent = expectedRolls(rune, opts) * pad.Cost.Amount;
     result.innerHTML = `
-      <h3 class="calc-total">Expected time: <strong>${formatDuration(secs)}</strong></h3>
+      <h3 class="calc-total">Expected time: <strong title="${formatDurationPrecise(secs)}">${formatDuration(secs)}</strong></h3>
       <p class="calc-note">
         ${need} more cop${need === 1 ? "y" : "ies"} (from ${curVal} to ${goalVal}) &middot; effective chance ${fmtChance(effChance(rune, Math.max(luckVal, 1), potion.checked))} per roll
         &middot; ${snow ? "snowballing rune" : "flat rate"}

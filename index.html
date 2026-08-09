@@ -12,6 +12,12 @@
         <img src="/favicon.svg" alt="" width="36" height="36" />
         <h1>Divine Rarities Wiki</h1>
         <button id="site-version" class="version" type="button" title="Changelog &amp; roadmap"></button>
+        <button id="settings-btn" class="settings-btn" type="button" title="Settings" aria-label="Settings" aria-haspopup="dialog">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <circle cx="12" cy="12" r="3"></circle>
+            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+          </svg>
+        </button>
       </div>
       <nav class="tabs">
         <a href="#/wiki" data-route="wiki">Wiki</a>
@@ -35,6 +41,13 @@
         <section>
           <h3>Changelog</h3>
           <ul>
+            <li>
+              <strong>1.2.0</strong> &mdash; rune totals calculator and data import/export
+              <ul>
+                <li>New &ldquo;Rune Totals&rdquo; calculator: track how many of each rune you own and see your total buff multipliers</li>
+                <li>Settings: export your saved data to a file and import it back, or reset everything</li>
+              </ul>
+            </li>
             <li><strong>1.1.0</strong> &mdash; reworked the rune wiki to look more like the game, reduced visual clutter</li>
             <li>
               <strong>1.0.0</strong> &mdash; initial release, still quite WIP
@@ -53,6 +66,22 @@
             <li>More calculators, like a RunePad calculator to get the time while getting multiple runes</li>
           </ul>
         </section>
+      </div>
+    </div>
+
+    <div id="settings-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="settings-modal-title">
+      <div class="modal-backdrop" data-close-settings></div>
+      <div class="modal-card">
+        <button type="button" class="modal-close" data-close-settings aria-label="Close">&times;</button>
+        <h2 id="settings-modal-title">Settings</h2>
+        <p class="settings-desc">Your copies owned, calculator inputs and settings are saved in this browser. Back them up or move them to another device with export and import.</p>
+        <div class="settings-actions">
+          <button type="button" id="settings-export">Export data</button>
+          <button type="button" id="settings-import">Import data</button>
+          <input type="file" id="settings-file" accept="application/json,.json" hidden />
+          <button type="button" id="settings-reset" class="danger">Reset data</button>
+        </div>
+        <p id="settings-status" class="settings-status" role="status"></p>
       </div>
     </div>
 
