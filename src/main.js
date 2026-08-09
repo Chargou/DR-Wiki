@@ -2,6 +2,10 @@ import "./styles.css";
 import { version } from "../package.json";
 import runesData from "./data/runes.json";
 import { runeStyle } from "./colors.js";
+import { fmtBig, fmtChance, fmtMult, fmtNum, humanizeStat, parseNum } from "./format.js";
+import { buffCopies, maxedCopies } from "./runes-model.js";
+import { PAD_NOTES, padDisplayName, padMeta, padRail } from "./pads.js";
+import { readCounts, renderRuneTotals } from "./rune-totals.js";
 
 const app = document.getElementById("app");
 const versionEl = document.getElementById("site-version");
@@ -17,124 +21,6 @@ modal.addEventListener("click", (e) => {
 document.addEventListener("keydown", (e) => {
   if (e.key === "Escape" && !modal.classList.contains("hidden")) modal.classList.add("hidden");
 });
-
-const STAT_DISPLAY = {
-  CashMulti: "Cash",
-  CoinMulti: "Coins",
-  CrystalMulti: "Crystals",
-  GemsMulti: "Gems",
-  EnergyMulti: "Energy",
-  FuelMulti: "Fuel",
-  SpaceCoinsMulti: "Space Coins",
-  StarsMulti: "Stars",
-  PlanetsMulti: "Planets",
-  SolarSystemsMulti: "Solar Systems",
-  GoldMulti: "Gold",
-  Luck: "Luck",
-  RebirthMulti: "Rebirth",
-  PrestigeMulti: "Prestige",
-  EventCoinsMulti: "Event Coins",
-  RuneBulk: "Rune Bulk",
-  RuneSpeed: "Rune Speed",
-  EventRuneBulk: "Event Rune Bulk",
-  EventRuneLuck: "Event Rune Luck",
-  DrillSpeed: "Drill Speed",
-  DrillBulk: "Drill Bulk",
-};
-
-function humanizeStat(name) {
-  if (STAT_DISPLAY[name]) return STAT_DISPLAY[name];
-  return name.replace(/([A-Z])/g, " $1").replace(/^ /, "");
-}
-
-function padDisplayName(name) {
-  return `${name.replace(/RunePad$/, "")} RunePad`;
-}
-
-/* Pad tab styling, mirroring the in-game Rune Index rail. Pads the game adds
-   later fall back to a neutral tab so the index keeps working without edits. */
-const PAD_META = {
-  BasicRunePad: { label: "Basic", slug: "basic", from: "#f4f6f9", to: "#aab3c0", ink: "#161c26" },
-  SandRunePad: { label: "Sand", slug: "sand", from: "#ffe2b0", to: "#ffb457", ink: "#3d2405" },
-  SpaceRunePad: { label: "Space", slug: "space", from: "#9333ea", to: "#5b06c4", ink: "#ffffff" },
-  EventRunePad: { label: "100K", slug: "100k", from: "#c2f89e", to: "#6ddc32", ink: "#14330a" },
-};
-
-const PAD_NOTES = {
-  EventRunePad:
-    "Event pad: uses Event Rune Bulk, Speed and Luck instead of the normal rune stats. It celebrates 100k visits and may be temporary.",
-};
-
-function padMeta(name) {
-  if (PAD_META[name]) return PAD_META[name];
-  const label = name.replace(/RunePad$/, "") || name;
-  return {
-    label,
-    slug: label.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "pad",
-    from: "#3a4658",
-    to: "#232c3a",
-    ink: "#e6edf3",
-  };
-}
-
-function fmtNum(n) {
-  if (Number.isInteger(n)) return String(n);
-  const r = Math.round(n * 1e4) / 1e4;
-  return String(r);
-}
-
-const SCALES = [
-  [1e3, "K"], [1e6, "M"], [1e9, "B"], [1e12, "T"], [1e15, "Qa"], [1e18, "Qi"],
-  [1e21, "Sx"], [1e24, "Sp"], [1e27, "Oc"], [1e30, "No"], [1e33, "Dc"],
-];
-
-const SCALE_MULT = {
-  k: 1e3, m: 1e6, b: 1e9, t: 1e12, qa: 1e15, qi: 1e18, sx: 1e21,
-  sp: 1e24, oc: 1e27, no: 1e30, dc: 1e33,
-};
-
-function parseNum(str) {
-  const m = String(str).trim().match(/^([0-9]+(?:\.[0-9]+)?)\s*([a-zA-Z]*)$/);
-  if (!m) return NaN;
-  const num = parseFloat(m[1]);
-  const suf = m[2].toLowerCase();
-  return suf ? num * (SCALE_MULT[suf] ?? NaN) : num;
-}
-
-function fmtBig(n) {
-  if (n < 1e3) return String(n);
-  let scale = null;
-  for (const [t, s] of SCALES) {
-    if (n >= t) scale = [t, s];
-    else break;
-  }
-  if (!scale) return n.toExponential(2).replace(/\.?0+e/, "e").replace("e+", "e");
-  const v = n / scale[0];
-  return `${parseFloat(v.toPrecision(3))}${scale[1]}`;
-}
-
-function fmtChance(chance) {
-  if (chance <= 100) return `1 in ${fmtBig(chance)} (${(100 / chance).toFixed(2)}%)`;
-  return `1 in ${fmtBig(chance)}`;
-}
-
-function buffCopies(buff) {
-  return Math.ceil(buff.MaxBuff / buff.Buff);
-}
-
-function maxedCopies(rune) {
-  return rune.Buffs.reduce((max, b) => Math.max(max, buffCopies(b)), 0);
-}
-
-/* The game prints a buff as `x9.20 Fuel`, tagging it [MAX] once capped. Its
-   value is min(Buff * copies, MaxBuff) - verified against a DARK MATTER card
-   at 46 copies, all six values exact. Matching that notation matters: the
-   wiki previously wrote the same number as `+9.2`, so anyone comparing a card
-   against their own screen saw a mismatch with no way to tell which was right.
-   (The true effect is 1+x; the game says x anyway. How Runes Work explains it.) */
-function fmtMult(v) {
-  return `x${v.toFixed(2)}`;
-}
 
 const MAX_TAG = ' <span class="buff-tag">[MAX]</span>';
 
@@ -214,18 +100,6 @@ function runeGrid(padName, pad, query) {
 
 function escapeHtml(str) {
   return String(str).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
-}
-
-function padRail(padNames, activeName) {
-  return padNames
-    .map((name) => {
-      const meta = padMeta(name);
-      const active = name === activeName;
-      return `<a class="pad-tab${active ? " active" : ""}" href="#/wiki/${meta.slug}"
-        style="--from: ${meta.from}; --to: ${meta.to}; --ink: ${meta.ink}"
-        aria-current="${active ? "page" : "false"}">${meta.label}</a>`;
-    })
-    .join("");
 }
 
 /* Cards switched to per-copy, so a filter keystroke that redraws the grid
@@ -312,7 +186,7 @@ function renderWiki(slug) {
     <p class="page-desc">Runes are a core part of Divine Rarities. They are bundled in RunePads, which cost a currency to open, and grant passive boosts to your stats. Pick a pad to see its runes.</p>
     ${runesInfoArticle()}
     <div class="rune-index">
-      <nav class="pad-rail" aria-label="Rune pads">${padRail(padNames, activeName)}</nav>
+      <nav class="pad-rail" aria-label="Rune pads">${padRail(padNames, activeName, (s) => `#/wiki/${s}`)}</nav>
       <section class="index-panel" id="index-panel">${padPanel(activeName, pad, "")}</section>
     </div>`;
 
@@ -446,9 +320,36 @@ function calcSelectOptions() {
     .join("");
 }
 
-function renderCalculators() {
+const CALCULATORS = [
+  ["time", "Rune Time"],
+  ["totals", "Rune Totals"],
+];
+
+function calcSubNav(active) {
+  return `<nav class="sub-tabs" aria-label="Calculators">${CALCULATORS.map(
+    ([slug, label]) =>
+      `<a class="sub-tab${slug === active ? " active" : ""}" href="#/calculators/${slug}" aria-current="${slug === active ? "page" : "false"}">${label}</a>`,
+  ).join("")}</nav>`;
+}
+
+function renderCalculators(slug) {
+  const active = CALCULATORS.some(([s]) => s === slug) ? slug : "time";
+  /* Same canonicalising as the wiki: a bare #/calculators still yields a link
+     that opens the same sub-page for someone else. */
+  if (slug !== active) history.replaceState(null, "", `#/calculators/${active}`);
+
   app.innerHTML = `
-    <h2 class="page-title">Rune Time Calculator</h2>
+    <h2 class="page-title">Calculators</h2>
+    ${calcSubNav(active)}
+    <div id="calc-host"></div>`;
+
+  const host = document.getElementById("calc-host");
+  if (active === "totals") return renderRuneTotals(host);
+  return renderRuneTime(host);
+}
+
+function renderRuneTime(host) {
+  host.innerHTML = `
     <p class="page-desc">On average, how long it takes to reach a goal number of copies of a rune. Every roll rolls the whole pad, so each copy of the rune takes <em>effective chance / RPS</em> time; snowballing runes (those that boost rune luck, rune bulk or rune speed) get faster as you farm them, which the calc accounts for copy by copy.</p>
     <section class="calc">
       <div class="calc-grid">
@@ -464,6 +365,7 @@ function renderCalculators() {
         <label class="calc-check hidden"><input id="calc-potion" type="checkbox" /> Rune Luck potion active</label>
         <label>Copies owned
           <input id="calc-current" type="number" min="0" step="1" value="0" />
+          <span id="calc-owned-note" class="field-note"></span>
         </label>
         <label>Goal copies
           <input id="calc-goal" type="number" min="1" step="1" />
@@ -479,6 +381,7 @@ function renderCalculators() {
   const potion = document.getElementById("calc-potion");
   const potionRow = potion.closest("label");
   const current = document.getElementById("calc-current");
+  const ownedNote = document.getElementById("calc-owned-note");
   const goal = document.getElementById("calc-goal");
   const suggestions = document.getElementById("calc-goal-suggestions");
   const result = document.getElementById("calc-result");
@@ -540,7 +443,11 @@ function renderCalculators() {
     luck.disabled = secret;
     potion.disabled = !secret;
     potionRow.classList.toggle("hidden", !secret);
-    current.value = 0;
+    /* Prefill from what the player recorded on the Rune Totals tab, so the two
+       calculators agree instead of asking for the same number twice. */
+    const owned = readCounts()[select.value] ?? 0;
+    current.value = Math.min(owned, maxedCopies(rune));
+    ownedNote.textContent = owned > 0 ? "from your Rune Totals" : "";
     goal.value = maxedCopies(rune);
     goal.max = maxedCopies(rune);
     renderGoalSuggestions(rune);
