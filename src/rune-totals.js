@@ -73,20 +73,25 @@ function statChip(stat, entry) {
     </li>`;
 }
 
-function totalsBody(counts) {
+function totalsBody(counts, activePad) {
   const totals = statTotals(runesData, counts);
   const active = [...totals.entries()].filter(([, e]) => e.current > 1);
   const owned = Object.values(counts).filter((n) => n > 0).length;
 
-  const bulk = totals.get("RuneBulk")?.current ?? 1;
-  const speed = totals.get("RuneSpeed")?.current ?? 1;
-  const maxRps = (totals.get("RuneBulk")?.max ?? 1) * (totals.get("RuneSpeed")?.max ?? 1);
+  /* The event pad farms with event rune stats rather than the normal ones, so
+     the RPS headline switches to match whichever pad is open. */
+  const isEvent = activePad === "EventRunePad";
+  const bulkName = isEvent ? "EventRuneBulk" : "RuneBulk";
+  const speedName = isEvent ? "EventRuneSpeed" : "RuneSpeed";
+  const bulk = totals.get(bulkName)?.current ?? 1;
+  const speed = totals.get(speedName)?.current ?? 1;
+  const maxRps = (totals.get(bulkName)?.max ?? 1) * (totals.get(speedName)?.max ?? 1);
   const luck = totals.get("Luck");
 
   const headline = `
     <div class="totals-headline">
       <div class="headline-stat">
-        <span class="headline-label">RPS multiplier</span>
+        <span class="headline-label">${isEvent ? "Event RPS multiplier" : "RPS multiplier"}</span>
         <strong>x${fmtBig(bulk * speed)}</strong>
         <span class="headline-sub">of x${fmtBig(maxRps)}</span>
       </div>
@@ -191,7 +196,7 @@ export function renderRuneTotals(host) {
         <nav class="pad-rail" aria-label="Rune pads">${padRail(padNames, activePad)}</nav>
         <aside class="totals-panel" aria-live="polite">
           <h3>Your totals</h3>
-          <div id="totals-body">${totalsBody(counts)}</div>
+          <div id="totals-body">${totalsBody(counts, activePad)}</div>
         </aside>
       </div>
       <section class="index-panel" id="counts-panel">${panelFor(activePad)}</section>
@@ -201,7 +206,7 @@ export function renderRuneTotals(host) {
   const panel = document.getElementById("counts-panel");
   const rail = host.querySelector(".pad-rail");
   const refreshTotals = () => {
-    body.innerHTML = totalsBody(counts);
+    body.innerHTML = totalsBody(counts, activePad);
   };
 
   /* Rewrites one card in place so typing never re-renders the field under the
@@ -266,5 +271,6 @@ export function renderRuneTotals(host) {
     writeStore(TOTALS_PAD_KEY, activePad);
     rail.innerHTML = padRail(padNames, activePad);
     panel.innerHTML = panelFor(activePad);
+    refreshTotals();
   });
 }
