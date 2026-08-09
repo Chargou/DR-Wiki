@@ -4,7 +4,19 @@ import runesData from "./data/runes.json";
 import { runeStyle } from "./colors.js";
 
 const app = document.getElementById("app");
-document.getElementById("site-version").textContent = `v${version}`;
+const versionEl = document.getElementById("site-version");
+versionEl.textContent = `v${version}`;
+versionEl.title = "Changelog & roadmap";
+
+const modal = document.getElementById("version-modal");
+document.getElementById("modal-version").textContent = version;
+versionEl.addEventListener("click", () => modal.classList.remove("hidden"));
+modal.addEventListener("click", (e) => {
+  if (e.target.closest("[data-close-modal]")) modal.classList.add("hidden");
+});
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && !modal.classList.contains("hidden")) modal.classList.add("hidden");
+});
 
 const STAT_DISPLAY = {
   CashMulti: "Cash",

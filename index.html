@@ -11,7 +11,7 @@
       <div class="brand">
         <img src="/favicon.svg" alt="" width="36" height="36" />
         <h1>Divine Rarities Wiki</h1>
-        <span id="site-version" class="version" title="Website version"></span>
+        <button id="site-version" class="version" type="button" title="Changelog &amp; roadmap"></button>
       </div>
       <nav class="tabs">
         <a href="#/wiki" data-route="wiki">Wiki</a>
@@ -26,6 +26,35 @@
       <p>Divine Rarities Wiki: a community wiki for the Roblox game <em>Divine Rarities</em>.</p>
       <p>Not affiliated with the game's developers. All game data is sourced from the game.</p>
     </footer>
+
+    <div id="version-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="version-modal-title">
+      <div class="modal-backdrop" data-close-modal></div>
+      <div class="modal-card">
+        <button type="button" class="modal-close" data-close-modal aria-label="Close">&times;</button>
+        <h2 id="version-modal-title">v<span id="modal-version"></span></h2>
+        <section>
+          <h3>Changelog</h3>
+          <ul>
+            <li><strong>1.1.0</strong> &mdash; reworked the rune wiki to look more like the game, reduced visual clutter</li>
+            <li>
+              <strong>1.0.0</strong> &mdash; initial release, still quite WIP
+              <ul>
+                <li>Rune part of the wiki done</li>
+                <li>First calculator, &ldquo;single rune time&rdquo;, done</li>
+              </ul>
+            </li>
+          </ul>
+        </section>
+        <section>
+          <h3>Roadmap</h3>
+          <ul>
+            <li>Guides</li>
+            <li>Fleshing out the wiki with more info than just runes</li>
+            <li>More calculators, like a RunePad calculator to get the time while getting multiple runes</li>
+          </ul>
+        </section>
+      </div>
+    </div>
 
     <script type="module" src="/src/main.js"></script>
   </body>
