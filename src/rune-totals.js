@@ -36,7 +36,7 @@ export function readCounts() {
   }
 }
 
-function writeCounts(counts) {
+export function writeCounts(counts) {
   try {
     localStorage.setItem(COUNTS_KEY, JSON.stringify(counts));
   } catch {

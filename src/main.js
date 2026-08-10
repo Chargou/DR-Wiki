@@ -5,7 +5,7 @@ import { runeStyle } from "./colors.js";
 import { fmtBig, fmtChance, fmtMult, fmtNum, humanizeStat, parseNum } from "./format.js";
 import { buffCopies, maxedCopies } from "./runes-model.js";
 import { PAD_NOTES, padDisplayName, padMeta, padRail } from "./pads.js";
-import { readCounts, renderRuneTotals } from "./rune-totals.js";
+import { readCounts, renderRuneTotals, writeCounts } from "./rune-totals.js";
 import { collectData, importData, resetData } from "./settings.js";
 
 const app = document.getElementById("app");
@@ -227,23 +227,31 @@ function resolvePad(padNames, slug) {
   return bySlug(slug) ?? bySlug(readStore(LAST_PAD_KEY)) ?? padNames[0];
 }
 
-function renderWiki(slug) {
+function renderWiki(section, slug) {
   const padNames = Object.keys(runesData);
+  /* The runes section lives at #/wiki/runes/<pad>. Redirect older #/wiki/<pad>
+     links, bare #/wiki, and any other wiki section here so the address bar
+     always matches what is on screen (replaceState: no second render). */
+  if (section !== "runes") {
+    const legacyPad = padNames.find((n) => padMeta(n).slug === section);
+    const pad = legacyPad ?? slug;
+    history.replaceState(null, "", `#/wiki/runes${pad ? `/${pad}` : ""}`);
+    if (section !== undefined) return renderWiki("runes", pad);
+  }
   const activeName = resolvePad(padNames, slug);
   const pad = runesData[activeName];
   const activeSlug = padMeta(activeName).slug;
   writeStore(LAST_PAD_KEY, activeSlug);
-  /* Keep the address bar on the pad actually being shown, so a bare #/wiki or a
-     dead slug still produces a link that opens the same pad for someone else.
-     replaceState instead of assigning location.hash: no second render. */
-  if (slug !== activeSlug) history.replaceState(null, "", `#/wiki/${activeSlug}`);
+  /* Keep the address bar on the pad actually being shown, so a dead slug still
+     produces a link that opens the same pad for someone else. */
+  if (slug !== activeSlug) history.replaceState(null, "", `#/wiki/runes/${activeSlug}`);
 
   app.innerHTML = `
     <h2 class="page-title">Rune Index</h2>
     <p class="page-desc">Runes are a core part of Divine Rarities. They are bundled in RunePads, which cost a currency to open, and grant passive boosts to your stats. Pick a pad to see its runes.</p>
     ${runesInfoArticle()}
     <div class="rune-index">
-      <nav class="pad-rail" aria-label="Rune pads">${padRail(padNames, activeName, (s) => `#/wiki/${s}`)}</nav>
+      <nav class="pad-rail" aria-label="Rune pads">${padRail(padNames, activeName, (s) => `#/wiki/runes/${s}`)}</nav>
       <section class="index-panel" id="index-panel">${padPanel(activeName, pad, "")}</section>
     </div>`;
 
@@ -338,6 +346,86 @@ function expectedTime(rune, { rps, luck, potion, current, goal }) {
   return total;
 }
 
+/* A rune is "snowballing" while at least one of its RuneBulk/RuneSpeed/RuneLuck
+   (or event variant) buffs still has headroom. The "Luck" stat is separate from
+   RuneLuck: Luck buffs affect drops elsewhere and never speed up rune farming,
+   so they are not snowballing here. A buffing rune's own Luck flag (whether
+   RuneLuck helps it) does not gate its buff's contribution: the shared RuneLuck
+   stat rises for everyone, and effChance applies it only to the runes RuneLuck
+   actually helps. */
+function snowballCandidate(rune, copies) {
+  return rune.Buffs.some(
+    (b) => (SNOWBALL_RPS.has(b.Target) || SNOWBALL_LUCK.has(b.Target)) && buffValueAt(b, copies) < b.MaxBuff,
+  );
+}
+
+function padRates(pad, copies) {
+  let rps = 1;
+  let luck = 1;
+  for (const rune of pad.Runes) {
+    const c = copies[rune.Name] ?? 0;
+    for (const b of rune.Buffs) {
+      const v = 1 + buffValueAt(b, c);
+      if (SNOWBALL_RPS.has(b.Target)) rps *= v;
+      else if (SNOWBALL_LUCK.has(b.Target)) luck *= v;
+    }
+  }
+  return { rps, luck };
+}
+
+/* Expected seconds to reach `goal` copies of `target` while the whole pad is
+   being rolled. Other runes you own (or pick up along the way) snowball the
+   rate too, so the RPS/luck the player entered are factored back to their base
+   and re-grow from every rune's buffs.
+
+   Each step advances whichever rune is closest to its next copy: the target
+   competes with the non-maxed snowball runes (advancing a snowball rune one
+   copy is worth it when it needs fewer rolls than the target does). During that
+   step every other rune gains copies in proportion to its expected rate, so
+   nothing is double counted. When only the target can snowball (or nothing
+   can), this is exactly the single-rune calc, so that path is taken directly. */
+function expectedTimeAll(pad, counts, target, goal, { rps, luck, potion }) {
+  const cur = counts[target.Name] ?? 0;
+  if (goal <= cur) return { time: 0, copies: { ...counts } };
+  const otherSnow = pad.Runes.some((r) => r.Name !== target.Name && snowballCandidate(r, counts[r.Name] ?? 0));
+  if (!otherSnow) {
+    return {
+      time: expectedTime(target, { rps, luck, potion, current: cur, goal }),
+      copies: { ...counts, [target.Name]: goal },
+    };
+  }
+
+  const base = padRates(pad, counts);
+  const baseRps = rps / base.rps;
+  const baseLuck = luck / base.luck;
+  const copies = { ...counts };
+  let time = 0;
+  while ((copies[target.Name] ?? 0) < goal) {
+    const rates = padRates(pad, copies);
+    const curLuck = baseLuck * rates.luck;
+    const curRps = baseRps * rates.rps;
+    let best = null;
+    let bestRolls = Infinity;
+    for (const rune of pad.Runes) {
+      const c = copies[rune.Name] ?? 0;
+      const advancing = rune.Name === target.Name ? c < goal : snowballCandidate(rune, c);
+      if (!advancing) continue;
+      const rolls = effChance(rune, curLuck, potion) * (1 - (c % 1));
+      if (rolls < bestRolls) {
+        bestRolls = rolls;
+        best = rune;
+      }
+    }
+    copies[best.Name] = Math.floor(copies[best.Name]) + 1;
+    time += bestRolls / curRps;
+    for (const rune of pad.Runes) {
+      if (rune.Name === best.Name) continue;
+      copies[rune.Name] = (copies[rune.Name] ?? 0) + bestRolls / effChance(rune, curLuck, potion);
+    }
+  }
+  return { time, copies };
+}
+
 function formatDuration(seconds) {
   if (seconds < 0.01) return seconds > 0 ? "less than a second" : "0 seconds";
   if (seconds < 60) return `${fmtNum(Math.round(seconds * 100) / 100)} seconds`;
@@ -401,6 +489,7 @@ function calcSelectOptions() {
 
 const CALCULATORS = [
   ["time", "Rune Time"],
+  ["pad", "Pad Time"],
   ["totals", "Rune Totals"],
 ];
 
@@ -424,6 +513,7 @@ function renderCalculators(slug) {
 
   const host = document.getElementById("calc-host");
   if (active === "totals") return renderRuneTotals(host);
+  if (active === "pad") return renderPadTime(host);
   return renderRuneTime(host);
 }
 
@@ -621,6 +711,253 @@ function renderRuneTime(host) {
   }
 }
 
+function renderPadTime(host) {
+  host.innerHTML = `
+    <p class="page-desc">How long to reach a goal number of copies of one rune while rolling the whole pad. Unlike the single-rune calculator, the other runes you own keep snowballing the rate as well: the calculator simulates the copies that drop along the way, re-applying their buffs as they arrive. Counts are prefilled from, and saved back to, your Rune Totals. RuneLuck and the potion are never locked here: RuneLuck speeds every non-secret (including the ones that snowball your RPS), while the potion's 2&times; is already baked into the RuneLuck you enter and only additionally halves the odds of secret drops.</p>
+    <section class="calc">
+      <div class="calc-grid">
+        <label>Pad
+          <select id="pad-calc-pad">${Object.keys(runesData).map((p) => `<option value="${p}">${padDisplayName(p)}</option>`).join("")}</select>
+        </label>
+        <label>Target rune
+          <select id="pad-calc-rune"></select>
+        </label>
+        <label>Runes per second
+          <input id="pad-calc-rps" type="text" inputmode="decimal" placeholder="1, 2.3k, 17.7M" />
+        </label>
+        <label>RuneLuck
+          <input id="pad-calc-luck" type="text" inputmode="decimal" placeholder="1, 250, 2.3k" />
+        </label>
+        <label class="calc-check"><input id="pad-calc-potion" type="checkbox" /> Rune Luck potion active</label>
+        <label>Goal copies
+          <input id="pad-calc-goal" type="number" min="1" step="1" />
+        </label>
+      </div>
+      <div class="pad-counts">
+        <h3>Runes in this pad <span class="pad-counts-note">edits update your Rune Totals</span></h3>
+        <div id="pad-calc-counts" class="pad-count-grid"></div>
+      </div>
+      <div id="pad-calc-result" class="calc-result"></div>
+    </section>`;
+
+  const padSelect = document.getElementById("pad-calc-pad");
+  const runeSelect = document.getElementById("pad-calc-rune");
+  const rps = document.getElementById("pad-calc-rps");
+  const luck = document.getElementById("pad-calc-luck");
+  const potion = document.getElementById("pad-calc-potion");
+  const goal = document.getElementById("pad-calc-goal");
+  const countsBox = document.getElementById("pad-calc-counts");
+  const result = document.getElementById("pad-calc-result");
+
+  function getPad() {
+    return runesData[padSelect.value];
+  }
+
+  function padCounts() {
+    const all = readCounts();
+    const out = {};
+    for (const r of getPad().Runes) out[r.Name] = all[`${padSelect.value}::${r.Name}`] ?? 0;
+    return out;
+  }
+
+  function getSelection() {
+    const pad = getPad();
+    const rune = pad.Runes.find((r) => r.Name === runeSelect.value) ?? pad.Runes[0];
+    return { rune, pad };
+  }
+
+  function saveState() {
+    try {
+      localStorage.setItem(
+        "dr-wiki:pad-calc",
+        JSON.stringify({
+          pad: padSelect.value,
+          rune: runeSelect.value,
+          rps: rps.value,
+          luck: luck.value,
+          potion: potion.checked,
+          goal: goal.value,
+        }),
+      );
+    } catch {
+      /* storage unavailable */
+    }
+  }
+
+  function loadState() {
+    try {
+      return JSON.parse(localStorage.getItem("dr-wiki:pad-calc")) || null;
+    } catch {
+      return null;
+    }
+  }
+
+  function displayCount(n) {
+    if (!n) return "";
+    return n >= 1e4 ? fmtBig(n) : String(n);
+  }
+
+  function renderRunes() {
+    runeSelect.innerHTML = getPad()
+      .Runes.map(
+        (r) => `<option value="${r.Name}">${r.Name} - 1 in ${fmtBig(r.Chance)}${r.Luck ? "" : " (secret)"}</option>`,
+      )
+      .join("");
+  }
+
+  function renderCounts() {
+    const owned = padCounts();
+    countsBox.innerHTML = getPad()
+      .Runes.map(
+        (r) => `
+        <div class="pad-count">
+          <span class="pad-count-name">${r.Name}</span>
+          <div class="pad-count-row">
+            <input type="text" inputmode="numeric" spellcheck="false" data-key="${r.Name}"
+              value="${displayCount(owned[r.Name])}" placeholder="0" aria-label="Copies of ${r.Name} owned" />
+            <button type="button" class="pad-max" data-key="${r.Name}" data-max="${maxedCopies(r)}"
+              title="Set ${r.Name} to its max copies" aria-pressed="false">Max</button>
+          </div>
+        </div>`,
+      )
+      .join("");
+    syncMaxButtons();
+  }
+
+  function syncMaxButtons() {
+    const all = readCounts();
+    for (const btn of countsBox.querySelectorAll(".pad-max")) {
+      const on = (all[`${padSelect.value}::${btn.dataset.key}`] ?? 0) >= parseFloat(btn.dataset.max);
+      btn.classList.toggle("on", on);
+      btn.setAttribute("aria-pressed", String(on));
+    }
+  }
+
+  function onPadChange() {
+    renderRunes();
+    renderCounts();
+    onRuneChange();
+  }
+
+  function onRuneChange() {
+    const { rune } = getSelection();
+    /* RuneLuck and the potion are never locked in this calculator: the pad
+       drops a mix of normal and secret runes, so RuneLuck can speed the
+       non-secrets that snowball your RPS and the potion is the only thing that
+       helps secret drops. */
+    goal.max = maxedCopies(rune);
+    if (!goal.value) goal.value = maxedCopies(rune);
+    recalc();
+  }
+
+  function recalc() {
+    saveState();
+    const pName = padSelect.value;
+    const pad = getPad();
+    const { rune } = getSelection();
+    const rpsVal = parseNum(rps.value);
+    const luckVal = luck.value === "" ? 1 : parseNum(luck.value);
+    const goalVal = Math.max(1, Math.floor(parseFloat(goal.value) || 0));
+    const owned = padCounts();
+    const cur = owned[rune.Name] ?? 0;
+
+    function fail(msg) {
+      result.innerHTML = `<p class="calc-error">${msg}</p>`;
+    }
+
+    if (!(rpsVal > 0)) return fail("Enter a positive RPS.");
+    if (!(luckVal >= 1)) return fail("RuneLuck must be at least 1.");
+    if (goalVal <= cur) return fail(`You already own ${fmtNum(cur)} copies of ${rune.Name}.`);
+
+    const sim = expectedTimeAll(pad, owned, rune, goalVal, {
+      rps: rpsVal,
+      luck: Math.max(luckVal, 1),
+      potion: potion.checked,
+    });
+
+    const maxed = [];
+    const gained = [];
+    for (const r of pad.Runes) {
+      if (r.Name === rune.Name) continue;
+      const n = sim.copies[r.Name] ?? 0;
+      if (n <= (owned[r.Name] ?? 0) + 0.5) continue;
+      if (n >= maxedCopies(r)) maxed.push(r.Name);
+      else gained.push({ name: r.Name, n: n - (owned[r.Name] ?? 0) });
+    }
+    gained.sort((a, b) => b.n - a.n);
+    const gainedList = gained.slice(0, 6).map((g) => `${fmtNum(Math.round(g.n * 100) / 100)} ${g.name}`);
+
+    const m0 = padRates(pad, owned);
+    const mg = padRates(pad, sim.copies);
+    const growth = [];
+    if (mg.rps !== m0.rps) growth.push(`RPS ${fmtNum(mg.rps / m0.rps)}x`);
+    if (mg.luck !== m0.luck) growth.push(`luck ${fmtNum(mg.luck / m0.luck)}x`);
+    const growing = growth.length > 0;
+
+    const alongside = [];
+    if (maxed.length) alongside.push(`max <strong>${maxed.join(", ")}</strong>`);
+    if (gainedList.length) alongside.push(`get <strong>${gainedList.join(", ")}</strong>`);
+
+    result.innerHTML = `
+      <h3 class="calc-total">Expected time: <strong title="${formatDurationPrecise(sim.time)}">${formatDuration(sim.time)}</strong></h3>
+      <p class="calc-note">From ${fmtNum(cur)} to ${fmtNum(goalVal)} copies of <strong>${rune.Name}</strong> on the ${padDisplayName(pName)} pad${rune.Luck ? "" : " (secret rune, RuneLuck does not help it)"}.</p>
+      ${growing ? `<p class="calc-note">Along the way you'll ${alongside.join(" and ")}, and your snowball multipliers grow to <strong>${growth.join(", ")}</strong>.</p>` : `<p class="calc-note">All snowballing runes are maxed, so the rate stays flat the whole run.</p>`}`;
+  }
+
+  padSelect.addEventListener("change", onPadChange);
+  runeSelect.addEventListener("change", onRuneChange);
+  for (const el of [rps, luck, potion, goal]) el.addEventListener("input", recalc);
+
+  countsBox.addEventListener("input", (e) => {
+    const input = e.target.closest("input[data-key]");
+    if (!input) return;
+    const key = `${padSelect.value}::${input.dataset.key}`;
+    const all = readCounts();
+    const n = parseNum(input.value);
+    if (Number.isFinite(n) && n > 0) all[key] = Math.round(n);
+    else delete all[key];
+    writeCounts(all);
+    syncMaxButtons();
+    recalc();
+  });
+
+  countsBox.addEventListener("click", (e) => {
+    const btn = e.target.closest(".pad-max");
+    if (!btn) return;
+    const all = readCounts();
+    const key = `${padSelect.value}::${btn.dataset.key}`;
+    const max = parseFloat(btn.dataset.max);
+    all[key] = max;
+    writeCounts(all);
+    const input = countsBox.querySelector(`input[data-key="${CSS.escape(btn.dataset.key)}"]`);
+    if (input) input.value = displayCount(max);
+    syncMaxButtons();
+    recalc();
+  });
+
+  countsBox.addEventListener("focusout", (e) => {
+    const input = e.target.closest("input[data-key]");
+    if (!input) return;
+    const n = readCounts()[`${padSelect.value}::${input.dataset.key}`] ?? 0;
+    input.value = displayCount(n);
+  });
+
+  const saved = loadState();
+  if (saved && runesData[saved.pad]) padSelect.value = saved.pad;
+  renderRunes();
+  if (saved && getPad().Runes.some((r) => r.Name === saved.rune)) runeSelect.value = saved.rune;
+  renderCounts();
+  rps.value = saved?.rps ?? "";
+  luck.value = saved?.luck ?? "";
+  potion.checked = !!saved?.potion;
+  onRuneChange();
+  if (saved?.goal) {
+    const max = maxedCopies(getSelection().rune);
+    goal.value = Math.min(Math.max(1, Math.floor(parseFloat(saved.goal) || 0)), max);
+    recalc();
+  }
+}
+
 function renderGuides() {
   app.innerHTML = placeholder(
     "Guides",
@@ -635,14 +972,19 @@ const routes = {
 };
 
 function currentRoute() {
-  const m = location.hash.match(/^#\/([a-z]+)(?:\/([a-z0-9-]+))?/i);
+  const m = location.hash.match(/^#\/([a-z]+)(?:\/([a-z0-9-]+)(?:\/([a-z0-9-]+))?)?/i);
   const route = m && m[1].toLowerCase() in routes ? m[1].toLowerCase() : "wiki";
-  return { route, sub: m && m[2] ? m[2].toLowerCase() : null };
+  return {
+    route,
+    section: m && m[2] ? m[2].toLowerCase() : null,
+    sub: m && m[3] ? m[3].toLowerCase() : null,
+  };
 }
 
 function render() {
-  const { route, sub } = currentRoute();
-  routes[route](sub);
+  const { route, section, sub } = currentRoute();
+  if (route === "wiki") renderWiki(section, sub);
+  else routes[route](section);
   document.querySelectorAll(".tabs a").forEach((a) => {
     a.classList.toggle("active", a.dataset.route === route);
   });
